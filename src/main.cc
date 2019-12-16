@@ -6,7 +6,8 @@
 #include "material.h"
 #include "random.h"
 #include "malha.h"
-
+#include <fstream>
+#include <algorithm>
 
 vec3 color(const ray& r, hitable *world, int depth) {
     hit_record rec;
@@ -54,7 +55,7 @@ hitable *random_scene() {
 
     list [4] = new malha( new lambertian(vec3(0.65, 0.05, 0.05)), "./objs/left_wall.obj");
 
-    list [5] = new malha( new light(vec3(0.73, 1, 1), 5), "./objs/light.obj");
+    list [5] = new malha( new light(vec3(1, 1, 1), 5), "./objs/light.obj");
 
     list [6] = new malha( new lambertian(vec3(0.05, 0.65, 0.05)), "./objs/right_wall.obj");
 
@@ -74,8 +75,9 @@ int main() {
     float dist_to_focus = 10.0;
     float aperture = 0.1;
 //origem= lookfrom, lookat = ponto q a camera ta olhando,fov = 20 ,AR
-    camera cam(lookfrom, lookat, vec3(0,1,0), 50, float(nx)/float(ny), aperture, dist_to_focus);
-
+    camera cam(lookfrom, lookat, vec3(0,-1,0), 50, float(nx)/float(ny), aperture, dist_to_focus);
+    std:: vector <vec3> buffer;
+    buffer.reserve(nx*ny);
     for (int j = ny-1; j >= 0; j--) {
         for (int i = 0; i < nx; i++) {
             vec3 col(0, 0, 0);
@@ -87,10 +89,17 @@ int main() {
             }
             col /= float(ns);
             col = vec3( sqrt(col[0]), sqrt(col[1]), sqrt(col[2]) );
-            int ir = int(255.99*col[0]);
-            int ig = int(255.99*col[1]);
-            int ib = int(255.99*col[2]);
-            std::cout << ir << " " << ig << " " << ib << "\n";
+            buffer[j*nx + i] = col;
         }
     }
+    std::ofstream ofs3("./imagem_1.ppm", std::ios::out | std::ios::binary); 
+    ofs3 << "P6\n" << nx << " " << ny << "\n255\n"; 
+    for (unsigned i = 0; i < nx * ny; ++i)
+    { 
+        // std::cout << "tnCol = " << (buffer[i]) << "\n";
+        ofs3 << (unsigned char)(std::min(float(1), (float)buffer[i].x()) * 255) << 
+                (unsigned char)(std::min(float(1), (float)buffer[i].y()) * 255) << 
+                (unsigned char)(std::min(float(1), (float)buffer[i].z()) * 255); 
+    }
+    ofs3.close();
 }

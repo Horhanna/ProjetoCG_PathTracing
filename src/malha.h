@@ -8,6 +8,7 @@
 #include <cstring>
 #include <iostream>
 #include <sstream>
+#include "lodepng.h"
 
 struct triangle {
 public:
@@ -35,12 +36,17 @@ class malha: public hitable  {
     public:
         malha() {}
         malha(material *m, const char* path) : mat_ptr(m)  {
+            read_OBJ(path);   
+        }
+		malha(material *m, const char* path, const char *texture_path) : mat_ptr(m)  {
             read_OBJ(path);
-            // std::cout << "cheguei aqui"<<std::endl;
+            decodeOneStep(texture_path);
         }
         virtual bool hit(const ray& r, float tmin, float tmax, hit_record& rec) const;
         std::vector< triangle > triangles;
         material *mat_ptr;
+		int texture_width, texture_height;
+		std::vector<vec3> texture_buffer;
         bool read_OBJ(const char* path) 
 	{
 
@@ -52,12 +58,9 @@ class malha: public hitable  {
 		std::ifstream f(path);
 		if (!f.is_open())
 		{
-			// std::cout << "File cannot be oppened or does not exist\n";
+			
 			return false;
 		}
-
-		// std::cout << "file was  oppened!\n";
-
 		
 		while (!f.eof())
 		{
@@ -185,46 +188,133 @@ class malha: public hitable  {
     
 
     bool intersect_triangle(const ray& r, const triangle &tr, float t_min, float t_max, hit_record& rec)const{
-        vec3 vertex0 = tr.vert[0];
-        vec3 vertex1 = tr.vert[1];  
-        vec3 vertex2 = tr.vert[2];
-        vec3 edge1, edge2, h, s, q;
-        float a,f,u,v;
-        edge1 = vertex1 - vertex0;
-        edge2 = vertex2 - vertex0;
-        h = cross(r.direction(), edge2);
-        a = dot( edge1, h );
-        if (a > -0.000001 && a < 0.000001){
-            return false;    // This ray is parallel to this triangle.
-        }
-        f = 1.0/a;
-        s = r.origin() - vertex0;
-        u = f *dot(s,h);
-        if (u < 0.0 || u > 1.0)
-            return false;
-        q = cross(s, edge1);
-        v = f * dot(r.direction(), q);
-        if (v < 0.0 || u + v > 1.0)
-            return false;
-        // At this stage we can compute t to find out where the intersection point is on the line.
-        float t = f * dot(edge2, q);
-        if (t >= t_min && t <= t_max) // ray intersection
-        {
-            float w = 1.0 - u - v;
-            vec3 normal = w*tr.normal[0] + u*tr.normal[1] + v*tr.normal[2]; 
-            rec.p = r.origin() + r.direction() * t;
-            rec.t = t;
-            rec.normal = normal;
-            rec.mat_ptr = this->mat_ptr;
-            return true;
-        }
-        else {
-            return false;
-        }// This means that there is a line intersection but not a ray intersection.
-        // compute plane's normal
+		vec3 v0= tr.vert[0];
+		vec3 v1= tr.vert[1];
+		vec3 v2= tr.vert[2];
+
+		vec3 v01= v1 - v0;
+		vec3 v02= v2 - v0;
+
+		vec3 normal= cross(v01, v02);
+		
+		float parallel= dot(r.direction(), normal); 
+		if (fabs (parallel) < 0.0001)
+			return false;
+		//distancia origem a v0
+		float d = dot(normal, v0);
+		//distancia ponto ao plano
+		float t = -(dot(normal, r.origin())-d)/parallel;
+		if (t < t_min)
+			return false;
+		//intersecao do raio com o plano
+		vec3 p = r.origin() + r.direction() * t;
+
+		vec3 vp0 = p - v0;
+		//vetor perpendicular
+		vec3 c0 = cross(v01, vp0);
+		//se os vetores estiverem em direcoes opostas retorna falso
+		if (dot(normal, c0)< 0)
+			return false;
+
+		vec3 v21 = v2 - v1;
+		vec3 vp1 = p - v1;
+		vec3 c1 = cross(v21, vp1);
+		if (dot(normal, c1)< 0)
+			return false;
+
+		v02 = v0 - v2;
+		vec3 vp2 = p - v2;
+		vec3 c2 = cross(v02, vp2);
+		if (dot(normal, c2)<0)
+			return false;
+
+		rec.t= t;
+		rec.p= p;
+		rec.mat_ptr = this-> mat_ptr;
+
+		float a = c0.length()/normal.length();
+		float b = c2.length()/normal.length();
+		float c = c1.length()/normal.length();
+
+		rec.normal = tr.normal[0]*a + tr.normal[1]*b + tr.normal[2]*c;
+		if(texture_buffer.size() > 0){
+			vec2 st = a*tr.uv[0] + b*tr.uv[1] + c*tr.uv[2];
+			int tx = std::floor( st.x()*(float)texture_width);
+			int ty = std::floor( (1.0f - st.y())*(float)texture_height);
+			int idx = (ty*texture_width + tx);
+			if(idx >= 0 && idx < texture_buffer.size())
+				rec.mat_ptr = new lambertian(texture_buffer[idx]);
+		}
+		return true;
+		
+		
+		// vec3 vertex0 = tr.vert[0];
+        // vec3 vertex1 = tr.vert[1];  
+        // vec3 vertex2 = tr.vert[2];
+        // vec3 edge1, edge2, h, s, q;
+        // float a,f,u,v;
+        // edge1 = vertex1 - vertex0;
+        // edge2 = vertex2 - vertex0;
+        // h = cross(r.direction(), edge2);
+        // a = dot( edge1, h );
+        // if (a > -0.000001 && a < 0.000001){
+        //     return false;    
+        // }
+        // f = 1.0/a;
+        // s = r.origin() - vertex0;
+        // u = f *dot(s,h);
+        // if (u < 0.0 || u > 1.0)
+        //     return false;
+        // q = cross(s, edge1);
+        // v = f * dot(r.direction(), q);
+        // if (v < 0.0 || u + v > 1.0)
+        //     return false;
+        
+        // float t = f * dot(edge2, q);
+        // if (t >= t_min && t <= t_max) 
+        // {
+        //     float w = 1.0 - u - v;
+        //     vec3 normal = w*tr.normal[0] + u*tr.normal[1] + v*tr.normal[2]; 
+        //     rec.p = r.origin() + r.direction() * t;
+        //     rec.t = t;
+        //     rec.normal = normal;
+        //     rec.mat_ptr = this->mat_ptr;
+		// 	if(texture_buffer.size() > 0){
+		// 		vec2 st = w*tr.uv[0] + u*tr.uv[1] + v*tr.uv[2];
+		// 		int tx = std::floor( st.x()*(float)texture_width);
+		// 		int ty = std::floor( (1.0f - st.y())*(float)texture_height);
+		// 		int idx = (ty*texture_width + tx);
+		// 		if(idx >= 0 && idx < texture_buffer.size())
+		// 			rec.mat_ptr = new lambertian(texture_buffer[idx]);
+		// 	}
+        //     return true;
+        // }
+        // else {
+        //     return false;
+        // }
 
     }
 
+
+	void decodeOneStep(const char* filename) {
+			std::vector<unsigned char> png;
+			std::vector<unsigned char> image; 
+			unsigned width, height;
+			lodepng::State state; 
+
+			unsigned error = lodepng::load_file(png, filename); 
+			if(!error) error = lodepng::decode(image, width, height, state, png);
+
+			
+			if(error) std::cout << "decoder error " << error << ": "<< lodepng_error_text(error) << std::endl;
+
+			texture_buffer.reserve( (int)width*(int)height);
+			for(int i = 0; i < image.size(); i+=4)
+				texture_buffer.push_back( vec3( float(image[i]), float(image[i+1]), float(image[i+2]) )/255.0f );
+			
+			texture_width = (int)width;
+			texture_height = (int)height;
+		}
 };
 
 

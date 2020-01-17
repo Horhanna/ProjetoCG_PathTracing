@@ -53,7 +53,6 @@ class light : public material{
         virtual bool scatter (const ray& r_in, const hit_record& rec, vec3& attenuation, ray& scattered)
         const  { return false;
     }
-    //construtor & copia direto
         light (const vec3& ec, const float in){
              intensity = in;
              emitted_color = ec;
@@ -107,7 +106,7 @@ class dielectric : public material {
              if (dot(r_in.direction(), rec.normal) > 0) {
                   outward_normal = -rec.normal;
                   ni_over_nt = ref_idx;
-               // cosine = ref_idx * dot(r_in.direction(), rec.normal) / r_in.direction().length();
+               
                   cosine = dot(r_in.direction(), rec.normal) / r_in.direction().length();
                   cosine = sqrt(1 - ref_idx*ref_idx*(1-cosine*cosine));
              }
